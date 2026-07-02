@@ -2,9 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { motion } from 'framer-motion';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { formatDate } from '@/lib/utils';
+import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
+import { formatDate, formatCount } from '@/lib/utils';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
 
@@ -14,123 +17,145 @@ interface EventSummary {
   code: string;
   status: string;
   createdAt: string;
-  _count: { polls: number; accessList: number };
+  _count: { polls: number; accessList: number; questions: number };
 }
+
+const statusColors: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
+  DRAFT: 'secondary',
+  ACTIVE: 'default',
+  SCHEDULED: 'outline',
+  ENDED: 'destructive',
+};
 
 export default function DashboardPage() {
   const [events, setEvents] = useState<EventSummary[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = document.cookie
-      .split('; ')
-      .find((r) => r.startsWith('token='))
-      ?.split('=')[1];
-
+    const token = localStorage.getItem('accessToken');
     fetch(`${API_URL}/events/my`, {
-      credentials: 'include',
-      headers: {
-        Authorization: `Bearer ${localStorage.getItem('accessToken')}`,
-      },
+      headers: { Authorization: `Bearer ${token}` },
     })
       .then((r) => r.json())
-      .then((data) => setEvents(data.data || []))
+      .then((data) => {
+        if (data.success) setEvents(data.data || []);
+      })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
 
+  const stats = [
+    { label: 'Total Events', value: events.length, icon: '📋', gradient: 'from-primary/20 via-primary/10 to-transparent' },
+    { label: 'Active Events', value: events.filter((e) => e.status === 'ACTIVE').length, icon: '🔴', gradient: 'from-success/20 via-success/10 to-transparent' },
+    { label: 'Total Participants', value: events.reduce((s, e) => s + e._count.accessList, 0), icon: '👥', gradient: 'from-secondary/20 via-secondary/10 to-transparent' },
+  ];
+
   return (
-    <div className="space-y-8">
-      <div className="flex items-center justify-between">
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.4 }}
+      className="space-y-8"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-          <p className="text-muted-foreground">Manage your events and view analytics.</p>
+          <p className="mt-1 text-muted-foreground">Manage your events and view analytics.</p>
         </div>
         <Link href="/events/create">
-          <Button>Create Event</Button>
+          <Button className="rounded-full bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90 shadow-lg shadow-primary/25">
+            Create Event
+          </Button>
         </Link>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Total Events
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold">{events.length}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Active Events
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold">
-              {events.filter((e) => e.status === 'ACTIVE').length}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Total Participants
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold">
-              {events.reduce((sum, e) => sum + e._count.accessList, 0)}
-            </p>
-          </CardContent>
-        </Card>
+      <div className="grid gap-5 md:grid-cols-3">
+        {stats.map((stat, i) => (
+          <motion.div
+            key={stat.label}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: i * 0.1 }}
+          >
+            <Card className="glass overflow-hidden rounded-2xl border-0 shadow-lg shadow-black/5">
+              <div className={`absolute inset-0 bg-gradient-to-br ${stat.gradient} pointer-events-none`} />
+              <CardHeader className="relative pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                  <span className="text-lg">{stat.icon}</span>
+                  {stat.label}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="relative">
+                <p className="text-4xl font-bold tracking-tight">{stat.value}</p>
+              </CardContent>
+            </Card>
+          </motion.div>
+        ))}
       </div>
 
       <div>
-        <h2 className="mb-4 text-xl font-semibold">Your Events</h2>
+        <h2 className="mb-4 text-xl font-semibold tracking-tight">Your Events</h2>
+
         {loading ? (
           <div className="space-y-4">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="skeleton h-24 rounded-xl" />
+              <Skeleton key={i} className="h-28 rounded-2xl" />
             ))}
           </div>
         ) : events.length === 0 ? (
-          <Card>
-            <CardContent className="flex flex-col items-center py-12">
-              <p className="mb-4 text-muted-foreground">No events yet</p>
+          <Card className="glass rounded-2xl border-0 shadow-lg shadow-black/5">
+            <CardContent className="flex flex-col items-center py-20 text-center">
+              <span className="mb-4 text-5xl">📊</span>
+              <p className="mb-2 text-lg font-medium">No events yet</p>
+              <p className="mb-6 text-sm text-muted-foreground">Create your first event to get started.</p>
               <Link href="/events/create">
-                <Button>Create Your First Event</Button>
+                <Button size="lg" className="rounded-full bg-gradient-to-r from-primary to-secondary shadow-lg shadow-primary/25">
+                  Create Event
+                </Button>
               </Link>
             </CardContent>
           </Card>
         ) : (
           <div className="space-y-4">
-            {events.map((event) => (
-              <Link key={event.id} href={`/events/${event.id}`}>
-                <Card className="transition-colors hover:bg-secondary/50">
-                  <CardContent className="flex items-center justify-between py-4">
-                    <div>
-                      <h3 className="font-semibold">{event.title}</h3>
-                      <p className="text-sm text-muted-foreground">
-                        Code: {event.code} &middot; {formatDate(event.createdAt)}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                      <span>{event._count.polls} polls</span>
-                      <span>{event._count.accessList} participants</span>
-                      <span className="rounded-full bg-primary/10 px-2 py-1 text-xs font-medium text-primary">
-                        {event.status}
-                      </span>
-                    </div>
-                  </CardContent>
-                </Card>
-              </Link>
+            {events.map((event, i) => (
+              <motion.div
+                key={event.id}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: i * 0.05 }}
+              >
+                <Link href={`/events/${event.id}`}>
+                  <Card className="glass rounded-2xl border-0 shadow-lg shadow-black/5 transition-all duration-300 hover:shadow-xl hover:-translate-y-0.5">
+                    <CardContent className="py-5">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-3">
+                            <h3 className="text-lg font-semibold truncate">{event.title}</h3>
+                            <Badge variant={statusColors[event.status] || 'secondary'} className="shrink-0">
+                              {event.status}
+                            </Badge>
+                          </div>
+                          <div className="mt-2 flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+                            <span className="font-mono tracking-wider">Code: {event.code}</span>
+                            <span>Created: {formatDate(event.createdAt)}</span>
+                          </div>
+                          <div className="mt-3 flex items-center gap-4 text-sm text-muted-foreground">
+                            <span>{event._count.polls} polls</span>
+                            <span>&middot;</span>
+                            <span>{formatCount(event._count.accessList)} participants</span>
+                            <span>&middot;</span>
+                            <span>{event._count.questions} questions</span>
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Link>
+              </motion.div>
             ))}
           </div>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 }

@@ -38,45 +38,39 @@ export function useSocket() {
     };
   }, [accessToken]);
 
-  const joinEventRoom = useCallback((eventId: string) => {
-    return new Promise<void>((resolve, reject) => {
-      socketRef.current?.emit('join_event_room', { eventId }, (response: any) => {
+  const emitWithAck = useCallback(<T>(event: string, data: T): Promise<any> => {
+    return new Promise((resolve, reject) => {
+      const socket = socketRef.current;
+      if (!socket || !socket.connected) {
+        reject(new Error('Socket not connected'));
+        return;
+      }
+      socket.emit(event, data, (response: any) => {
         if (response?.error) reject(new Error(response.error));
-        else resolve();
+        else resolve(response);
       });
     });
   }, []);
+
+  const joinEventRoom = useCallback((eventId: string): Promise<void> => {
+    return emitWithAck('join_event_room', { eventId });
+  }, [emitWithAck]);
 
   const leaveEventRoom = useCallback((eventId: string) => {
     socketRef.current?.emit('leave_event_room', { eventId });
   }, []);
 
-  const castVote = useCallback((pollId: string, optionIds: string[]) => {
-    return new Promise<void>((resolve, reject) => {
-      socketRef.current?.emit('cast_vote', { pollId, optionIds }, (response: any) => {
-        if (response?.error) reject(new Error(response.error));
-        else resolve();
-      });
-    });
-  }, []);
+  const castVote = useCallback((pollId: string, optionIds: string[]): Promise<void> => {
+    return emitWithAck('cast_vote', { pollId, optionIds });
+  }, [emitWithAck]);
 
-  const askQuestion = useCallback((eventId: string, content: string, isAnonymous = false) => {
-    return new Promise<void>((resolve, reject) => {
-      socketRef.current?.emit('ask_question', { eventId, content, isAnonymous }, (response: any) => {
-        if (response?.error) reject(new Error(response.error));
-        else resolve();
-      });
-    });
-  }, []);
+  const askQuestion = useCallback((eventId: string, content: string, isAnonymous = false): Promise<void> => {
+    return emitWithAck('ask_question', { eventId, content, isAnonymous });
+  }, [emitWithAck]);
 
-  const upvoteQuestion = useCallback((questionId: string) => {
-    return new Promise<void>((resolve, reject) => {
-      socketRef.current?.emit('upvote_question', { questionId }, (response: any) => {
-        if (response?.error) reject(new Error(response.error));
-        else resolve();
-      });
-    });
-  }, []);
+  const upvoteQuestion = useCallback((questionId: string): Promise<void> => {
+    return emitWithAck('upvote_question', { questionId });
+  }, [emitWithAck]);
 
   const on = useCallback((event: string, handler: (...args: any[]) => void) => {
     socketRef.current?.on(event, handler);

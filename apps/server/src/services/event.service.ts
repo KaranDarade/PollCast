@@ -2,6 +2,8 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { prisma } from '../db';
 import { NotFoundError, ForbiddenError } from '../utils/errors';
+import { emailService } from './email.service';
+import { config } from '../config';
 import type { CreateEventInput, UpdateEventInput } from '../validators/event';
 
 export class EventService {
@@ -202,6 +204,18 @@ export class EventService {
       },
       orderBy: { joinedAt: 'desc' },
     });
+  }
+
+  async sendInvite(eventId: string, inviter: { userId: string; name?: string }, email: string) {
+    const event = await prisma.event.findUnique({ where: { id: eventId } });
+    if (!event) throw new NotFoundError('Event');
+
+    const inviterUser = await prisma.user.findUnique({ where: { id: inviter.userId } });
+    const inviterName = inviter.name || inviterUser?.name || 'Someone';
+
+    const result = await emailService.sendInvite(email, inviterName, event.title, event.code, config.frontendUrl);
+
+    return result;
   }
 }
 

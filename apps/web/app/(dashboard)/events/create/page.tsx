@@ -2,57 +2,49 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
+import { motion } from 'framer-motion';
+import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
-
-const createEventSchema = z.object({
-  title: z.string().min(3, 'Title must be at least 3 characters').max(200),
-  description: z.string().max(2000).optional(),
-  password: z.string().min(4).optional().or(z.literal('')),
-  maxParticipants: z.coerce.number().int().positive().optional().or(z.literal('')),
-});
-
-type CreateEventForm = z.infer<typeof createEventSchema>;
+import { toast } from '@/components/ui/use-toast';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
 
 export default function CreateEventPage() {
   const router = useRouter();
-  const [error, setError] = useState('');
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [maxParticipants, setMaxParticipants] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const { register, handleSubmit, formState: { errors } } = useForm<CreateEventForm>({
-    resolver: zodResolver(createEventSchema),
-  });
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (title.length < 3) { setError('Title must be at least 3 characters'); return; }
 
-  const onSubmit = async (data: CreateEventForm) => {
     setLoading(true);
     setError('');
+    const token = localStorage.getItem('accessToken');
+
     try {
-      const token = localStorage.getItem('accessToken');
       const res = await fetch(`${API_URL}/events`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
-          title: data.title,
-          description: data.description || undefined,
-          password: data.password || undefined,
-          maxParticipants: data.maxParticipants ? Number(data.maxParticipants) : undefined,
+          title,
+          description: description || undefined,
+          maxParticipants: maxParticipants ? parseInt(maxParticipants) : undefined,
         }),
       });
 
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.message || 'Failed to create event');
-
-      router.push(`/events/${json.data.id}`);
+      const data = await res.json();
+      if (data.success) {
+        toast({ title: 'Event created!', variant: 'success' });
+        router.push(`/events/${data.data.id}`);
+      } else {
+        setError(data.message || 'Failed to create event');
+      }
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -61,61 +53,84 @@ export default function CreateEventPage() {
   };
 
   return (
-    <div className="mx-auto max-w-2xl">
-      <h1 className="mb-8 text-3xl font-bold tracking-tight">Create Event</h1>
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4 }}
+      className="mx-auto max-w-2xl"
+    >
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold tracking-tight">Create Event</h1>
+        <p className="mt-1 text-muted-foreground">Set up a new event for your audience to join.</p>
+      </div>
 
-      <Card>
-        <CardHeader>
+      <Card className="glass rounded-2xl border-0 shadow-xl shadow-black/5">
+        <CardHeader className="border-b border-white/10 pb-4">
           <CardTitle>Event Details</CardTitle>
-          <CardDescription>
-            Set up a new event for your audience to join.
-          </CardDescription>
         </CardHeader>
-        <form onSubmit={handleSubmit(onSubmit)}>
-          <CardContent className="space-y-4">
+
+        <form onSubmit={handleSubmit}>
+          <CardContent className="space-y-5 pt-6">
             {error && (
-              <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="rounded-xl bg-destructive/10 p-3 text-sm text-destructive"
+              >
                 {error}
-              </div>
+              </motion.div>
             )}
+
             <div className="space-y-2">
               <Label htmlFor="title">Event Title *</Label>
-              <Input id="title" placeholder="e.g. Q3 All-Hands Meeting" {...register('title')} />
-              {errors.title && (
-                <p className="text-sm text-destructive">{errors.title.message}</p>
-              )}
+              <Input
+                id="title"
+                placeholder="My Awesome Event"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                required
+                minLength={3}
+                className="h-11 rounded-xl"
+              />
             </div>
+
             <div className="space-y-2">
               <Label htmlFor="description">Description</Label>
               <textarea
                 id="description"
                 rows={4}
-                className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm"
-                placeholder="Describe your event..."
-                {...register('description')}
+                className="flex w-full rounded-xl border border-input bg-transparent px-4 py-3 text-sm shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-ring"
+                placeholder="Tell your audience what this event is about..."
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
               />
-              {errors.description && (
-                <p className="text-sm text-destructive">{errors.description.message}</p>
-              )}
             </div>
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="password">Event Password (optional)</Label>
-                <Input id="password" type="password" placeholder="Private event?" {...register('password')} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="maxParticipants">Max Participants (optional)</Label>
-                <Input id="maxParticipants" type="number" placeholder="e.g. 100" {...register('maxParticipants')} />
-              </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="maxParticipants">Max Participants</Label>
+              <Input
+                id="maxParticipants"
+                type="number"
+                placeholder="Unlimited"
+                value={maxParticipants}
+                onChange={(e) => setMaxParticipants(e.target.value)}
+                className="h-11 rounded-xl"
+              />
+              <p className="text-xs text-muted-foreground">Leave empty for unlimited participants.</p>
             </div>
           </CardContent>
-          <CardFooter>
-            <Button type="submit" disabled={loading}>
+
+          <CardFooter className="border-t border-white/10 pt-4">
+            <Button
+              type="submit"
+              className="rounded-full bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90 shadow-lg shadow-primary/25 transition-all duration-300"
+              disabled={loading}
+            >
               {loading ? 'Creating...' : 'Create Event'}
             </Button>
           </CardFooter>
         </form>
       </Card>
-    </div>
+    </motion.div>
   );
 }

@@ -23,5 +23,12 @@ export const changePasswordSchema = z.object({
   newPassword: z.string().min(8).max(100),
 });
 
+export const updateProfileSchema = z.object({
+  name: z.string().min(2).max(100).trim().optional(),
+  phone: z.string().max(20).optional(),
+  avatar: z.string().max(5000).optional(),
+});
+
 export type SignupInput = z.infer<typeof signupSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
+export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;

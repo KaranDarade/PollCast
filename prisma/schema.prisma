@@ -37,6 +37,7 @@ model User {
   passwordHash      String
   name              String
   avatar            String?
+  phone             String?
   roleId            String    @db.Uuid
   role              Role      @relation(fields: [roleId], references: [id])
   emailVerified     DateTime?

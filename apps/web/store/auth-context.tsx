@@ -1,12 +1,15 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
+import { useRouter } from 'next/navigation';
 
 interface User {
   id: string;
   email: string;
   name: string;
   role: string;
+  avatar?: string | null;
+  phone?: string | null;
 }
 
 interface AuthContextType {
@@ -17,6 +20,7 @@ interface AuthContextType {
   signup: (email: string, password: string, name: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshAuth: () => Promise<void>;
+  updateProfile: (data: { name?: string; phone?: string; avatar?: string }) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -44,11 +48,15 @@ async function fetchWithAuth(url: string, options: RequestInit = {}, token?: str
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   const refreshAuth = useCallback(async () => {
+    const stored = localStorage.getItem('accessToken');
+    if (stored) setAccessToken(stored);
+
     try {
       const res = await fetch(`${API_URL}/auth/refresh`, {
         method: 'POST',
@@ -57,17 +65,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (!res.ok) {
-        setUser(null);
-        setAccessToken(null);
+        if (!stored) { setUser(null); setAccessToken(null); }
         return;
       }
 
       const data = await res.json();
       setUser(data.data.user);
       setAccessToken(data.data.accessToken);
+      localStorage.setItem('accessToken', data.data.accessToken);
     } catch {
-      setUser(null);
-      setAccessToken(null);
+      if (!localStorage.getItem('accessToken')) {
+        setUser(null);
+        setAccessToken(null);
+      }
     }
   }, []);
 
@@ -82,28 +92,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     setUser(data.data.user);
     setAccessToken(data.data.accessToken);
+    localStorage.setItem('accessToken', data.data.accessToken);
   };
 
   const signup = async (email: string, password: string, name: string) => {
-    const data = await fetchWithAuth(`${API_URL}/auth/signup`, {
+    await fetchWithAuth(`${API_URL}/auth/signup`, {
       method: 'POST',
       body: JSON.stringify({ email, password, name }),
     });
   };
 
   const logout = async () => {
-    await fetchWithAuth(
-      `${API_URL}/auth/logout`,
-      { method: 'POST' },
-      accessToken
-    );
+    try {
+      await fetchWithAuth(
+        `${API_URL}/auth/logout`,
+        { method: 'POST' },
+        accessToken
+      );
+    } catch {
+      // Still clear local state even if server call fails (e.g. expired token)
+    }
     setUser(null);
     setAccessToken(null);
+    localStorage.removeItem('accessToken');
+    document.cookie = 'refreshToken=; Path=/api/v1/auth; Max-Age=0';
+    router.push('/login');
+  };
+
+  const updateProfile = async (data: { name?: string; phone?: string; avatar?: string }) => {
+    const res = await fetchWithAuth(
+      `${API_URL}/auth/me`,
+      { method: 'PATCH', body: JSON.stringify(data) },
+      accessToken
+    );
+    setUser(res.data);
   };
 
   return (
     <AuthContext.Provider
-      value={{ user, accessToken, isLoading, login, signup, logout, refreshAuth }}
+      value={{ user, accessToken, isLoading, login, signup, logout, refreshAuth, updateProfile }}
     >
       {children}
     </AuthContext.Provider>

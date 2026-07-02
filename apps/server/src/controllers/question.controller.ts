@@ -10,13 +10,13 @@ export class QuestionController {
   }
 
   async getEventQuestions(req: Request, res: Response) {
-    const questions = await questionService.getEventQuestions(req.params.eventId);
+    const questions = await questionService.getEventQuestions(req.params.eventId!);
     res.json({ success: true, data: questions });
   }
 
   async getPending(req: Request, res: Response) {
     const questions = await questionService.getPendingQuestions(
-      req.params.eventId,
+      req.params.eventId!,
       req.user!.userId
     );
     res.json({ success: true, data: questions });
@@ -33,12 +33,12 @@ export class QuestionController {
   }
 
   async upvote(req: Request, res: Response) {
-    const result = await questionService.upvoteQuestion(req.params.id, req.user!.userId);
+    const result = await questionService.upvoteQuestion(req.params.id!, req.user!.userId);
     res.json({ success: true, message: result.upvoted ? 'Upvoted' : 'Upvote removed', data: result });
   }
 
   async delete(req: Request, res: Response) {
-    await questionService.deleteQuestion(req.params.id, req.user!.userId);
+    await questionService.deleteQuestion(req.params.id!, req.user!.userId);
     res.json({ success: true, message: 'Question deleted' });
   }
 }

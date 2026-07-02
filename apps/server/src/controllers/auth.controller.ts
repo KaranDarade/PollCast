@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { authService } from '../services/auth.service';
-import { signupSchema, loginSchema } from '../validators/auth';
+import { signupSchema, loginSchema, updateProfileSchema } from '../validators/auth';
 
 export class AuthController {
   async signup(req: Request, res: Response) {
@@ -71,6 +71,12 @@ export class AuthController {
   async me(req: Request, res: Response) {
     const user = await authService.getMe(req.user!.userId);
     res.json({ success: true, data: user });
+  }
+
+  async updateMe(req: Request, res: Response) {
+    const input = updateProfileSchema.parse(req.body);
+    const user = await authService.updateMe(req.user!.userId, input);
+    res.json({ success: true, message: 'Profile updated', data: user });
   }
 }
 

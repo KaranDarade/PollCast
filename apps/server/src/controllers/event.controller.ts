@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { eventService } from '../services/event.service';
 import { createEventSchema, updateEventSchema, joinEventSchema } from '../validators/event';
+import { sendInviteSchema } from '../validators/invite';
 
 export class EventController {
   async create(req: Request, res: Response) {
@@ -10,12 +11,12 @@ export class EventController {
   }
 
   async getById(req: Request, res: Response) {
-    const event = await eventService.getEventById(req.params.id);
+    const event = await eventService.getEventById(req.params.id!);
     res.json({ success: true, data: event });
   }
 
   async getByCode(req: Request, res: Response) {
-    const event = await eventService.getEventByCode(req.params.code);
+    const event = await eventService.getEventByCode(req.params.code!);
     res.json({ success: true, data: event });
   }
 
@@ -26,12 +27,12 @@ export class EventController {
 
   async update(req: Request, res: Response) {
     const input = updateEventSchema.parse(req.body);
-    const event = await eventService.updateEvent(req.params.id, req.user!.userId, input);
+    const event = await eventService.updateEvent(req.params.id!, req.user!.userId, input);
     res.json({ success: true, message: 'Event updated', data: event });
   }
 
   async delete(req: Request, res: Response) {
-    await eventService.deleteEvent(req.params.id, req.user!.userId);
+    await eventService.deleteEvent(req.params.id!, req.user!.userId);
     res.json({ success: true, message: 'Event deleted' });
   }
 
@@ -42,8 +43,14 @@ export class EventController {
   }
 
   async getParticipants(req: Request, res: Response) {
-    const participants = await eventService.getParticipants(req.params.id);
+    const participants = await eventService.getParticipants(req.params.id!);
     res.json({ success: true, data: participants });
+  }
+
+  async sendInvite(req: Request, res: Response) {
+    const input = sendInviteSchema.parse(req.body);
+    const result = await eventService.sendInvite(req.params.id!, req.user!, input.email);
+    res.json({ success: true, message: 'Invite sent', data: result });
   }
 }
 

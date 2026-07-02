@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { prisma } from '../db';
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../utils/jwt';
 import { UnauthorizedError, ConflictError } from '../utils/errors';
-import type { SignupInput, LoginInput } from '../validators/auth';
+import type { SignupInput, LoginInput, UpdateProfileInput } from '../validators/auth';
 
 export class AuthService {
   async signup(input: SignupInput) {
@@ -156,6 +156,30 @@ export class AuthService {
     if (!user) {
       throw new UnauthorizedError('User not found');
     }
+
+    return user;
+  }
+
+  async updateMe(userId: string, input: UpdateProfileInput) {
+    const data: Record<string, any> = {};
+    if (input.name !== undefined) data.name = input.name;
+    if (input.phone !== undefined) data.phone = input.phone;
+    if (input.avatar !== undefined) data.avatar = input.avatar;
+
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data,
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        avatar: true,
+        phone: true,
+        role: { select: { name: true } },
+        emailVerified: true,
+        createdAt: true,
+      },
+    });
 
     return user;
   }

@@ -17,6 +17,7 @@ import { eventRoutes } from './routes/event.routes';
 import { pollRoutes } from './routes/poll.routes';
 import { questionRoutes } from './routes/question.routes';
 import { configureSocket } from './sockets';
+import { setIO } from './sockets/emitter';
 
 const app = express();
 const server = http.createServer(app);
@@ -76,6 +77,9 @@ app.use('/api/v1/questions', questionRoutes);
 // Error handling
 app.use(notFoundHandler);
 app.use(errorHandler);
+
+// Make io accessible to controllers
+setIO(io);
 
 // Configure Socket.IO
 configureSocket(io);

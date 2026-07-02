@@ -2,61 +2,44 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
+import { motion } from 'framer-motion';
+import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
-
-const joinSchema = z.object({
-  code: z.string().min(1, 'Join code is required'),
-  password: z.string().optional(),
-});
-
-type JoinForm = z.infer<typeof joinSchema>;
+import { toast } from '@/components/ui/use-toast';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
 
 export default function JoinEventPage() {
   const router = useRouter();
-  const [error, setError] = useState('');
+  const [code, setCode] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [needsPassword, setNeedsPassword] = useState(false);
+  const [error, setError] = useState('');
 
-  const { register, handleSubmit, formState: { errors } } = useForm<JoinForm>({
-    resolver: zodResolver(joinSchema),
-  });
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!code.trim()) { setError('Please enter an event code'); return; }
 
-  const onSubmit = async (data: JoinForm) => {
     setLoading(true);
     setError('');
+    const token = localStorage.getItem('accessToken');
+
     try {
-      const token = localStorage.getItem('accessToken');
       const res = await fetch(`${API_URL}/events/join`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          code: data.code.toUpperCase(),
-          password: data.password || undefined,
-        }),
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ code: code.toUpperCase().trim(), password: password || undefined }),
       });
 
-      const json = await res.json();
-
-      if (res.status === 403 && json.message?.includes('password')) {
-        setNeedsPassword(true);
-        setLoading(false);
-        return;
+      const data = await res.json();
+      if (data.success) {
+        toast({ title: 'Joined event!', variant: 'success' });
+        router.push(`/event/${code.toUpperCase().trim()}`);
+      } else {
+        setError(data.message || 'Failed to join event');
       }
-
-      if (!res.ok) throw new Error(json.message || 'Failed to join event');
-
-      router.push(`/event/${data.code.toUpperCase()}`);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -65,49 +48,71 @@ export default function JoinEventPage() {
   };
 
   return (
-    <div className="mx-auto max-w-md pt-12">
-      <Card>
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Join Event</CardTitle>
-          <CardDescription>Enter the event code shared by the host.</CardDescription>
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4 }}
+      className="mx-auto max-w-md"
+    >
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold tracking-tight">Join Event</h1>
+        <p className="mt-1 text-muted-foreground">Enter the event code to join.</p>
+      </div>
+
+      <Card className="glass rounded-2xl border-0 shadow-xl shadow-black/5">
+        <CardHeader className="border-b border-white/10 pb-4">
+          <CardTitle>Event Code</CardTitle>
         </CardHeader>
-        <form onSubmit={handleSubmit(onSubmit)}>
-          <CardContent className="space-y-4">
+
+        <form onSubmit={handleSubmit}>
+          <CardContent className="space-y-5 pt-6">
             {error && (
-              <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="rounded-xl bg-destructive/10 p-3 text-sm text-destructive"
+              >
                 {error}
-              </div>
+              </motion.div>
             )}
+
             <div className="space-y-2">
-              <Label htmlFor="code">Event Code</Label>
+              <Label htmlFor="code">Code</Label>
               <Input
                 id="code"
                 placeholder="e.g. ABC12345"
-                className="text-center text-lg font-mono uppercase tracking-widest"
-                {...register('code')}
-                onChange={(e) => {
-                  e.target.value = e.target.value.toUpperCase();
-                  register('code').onChange(e);
-                }}
+                value={code}
+                onChange={(e) => setCode(e.target.value.toUpperCase())}
+                required
+                maxLength={8}
+                className="h-12 rounded-xl text-center font-mono text-lg tracking-widest uppercase"
               />
-              {errors.code && (
-                <p className="text-sm text-destructive">{errors.code.message}</p>
-              )}
             </div>
-            {needsPassword && (
-              <div className="space-y-2">
-                <Label htmlFor="password">Event Password</Label>
-                <Input id="password" type="password" {...register('password')} />
-              </div>
-            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="password">Password (if required)</Label>
+              <Input
+                id="password"
+                type="password"
+                placeholder="Event password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="h-11 rounded-xl"
+              />
+            </div>
           </CardContent>
-          <CardFooter>
-            <Button type="submit" className="w-full" disabled={loading}>
+
+          <CardFooter className="border-t border-white/10 pt-4">
+            <Button
+              type="submit"
+              className="w-full rounded-full bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90 shadow-lg shadow-primary/25 transition-all duration-300"
+              disabled={loading}
+            >
               {loading ? 'Joining...' : 'Join Event'}
             </Button>
           </CardFooter>
         </form>
       </Card>
-    </div>
+    </motion.div>
   );
 }

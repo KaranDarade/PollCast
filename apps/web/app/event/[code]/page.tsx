@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -8,8 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import { toast } from '@/components/ui/use-toast';
 import { useAuth } from '@/store/auth-context';
 import { useSocket } from '@/hooks/useSocket';
@@ -39,7 +39,9 @@ interface Poll {
   status: string;
   isMultipleChoice: boolean;
   timerSeconds: number | null;
+  endsAt: string | null;
   options: PollOption[];
+  _count?: { votes: number };
 }
 
 interface Question {
@@ -53,33 +55,84 @@ interface Question {
   author: { id: string; name: string };
 }
 
+function useCountdown(targetDate: string | null): number {
+  const [remaining, setRemaining] = useState(0);
+
+  useEffect(() => {
+    if (!targetDate) return;
+
+    const tick = () => {
+      const diff = new Date(targetDate).getTime() - Date.now();
+      if (diff <= 0) { setRemaining(0); return; }
+      setRemaining(Math.ceil(diff / 1000));
+    };
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [targetDate]);
+
+  return remaining;
+}
+
+function formatTimer(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+const SHARE_PLATFORMS = [
+  { name: 'Twitter', color: 'bg-[#1DA1F2] hover:bg-[#1a8cd8]', share: (url: string, text: string) => `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}` },
+  { name: 'Facebook', color: 'bg-[#1877F2] hover:bg-[#166fe5]', share: (url: string) => `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}` },
+  { name: 'LinkedIn', color: 'bg-[#0A66C2] hover:bg-[#095aab]', share: (url: string, text: string) => `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}&summary=${encodeURIComponent(text)}` },
+  { name: 'WhatsApp', color: 'bg-[#25D366] hover:bg-[#21bd5b]', share: (url: string, text: string) => `https://wa.me/?text=${encodeURIComponent(text + ' ' + url)}` },
+];
+
 export default function EventPage() {
   const params = useParams();
-  const { user, accessToken } = useAuth();
-  const { isConnected, castVote, askQuestion, upvoteQuestion, on } = useSocket();
+  const { accessToken } = useAuth();
+  const { isConnected, joinEventRoom, castVote, askQuestion, upvoteQuestion, on } = useSocket();
 
   const [event, setEvent] = useState<EventData | null>(null);
   const [polls, setPolls] = useState<Poll[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [selectedOptions, setSelectedOptions] = useState<Record<string, string[]>>({});
+  const [votingPoll, setVotingPoll] = useState<string | null>(null);
   const [questionText, setQuestionText] = useState('');
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [submittingQuestion, setSubmittingQuestion] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [hasJoinedRoom, setHasJoinedRoom] = useState(false);
+  const [joinError, setJoinError] = useState<string | null>(null);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [sendingInvite, setSendingInvite] = useState(false);
 
   // Fetch event data
   useEffect(() => {
     if (!params.code) return;
-
     fetch(`${API_URL}/events/code/${params.code}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     })
       .then((r) => r.json())
       .then((data) => {
         if (data.success) setEvent(data.data);
+        else setJoinError(data.message || 'Event not found');
       })
-      .catch(console.error);
+      .catch(() => setJoinError('Failed to load event'));
   }, [params.code, accessToken]);
+
+  // Join socket room once event loads and socket is connected
+  useEffect(() => {
+    if (!event?.id || !isConnected || hasJoinedRoom) return;
+
+    joinEventRoom(event.id)
+      .then(() => {
+        setHasJoinedRoom(true);
+        setJoinError(null);
+      })
+      .catch((err) => {
+        setJoinError(err.message || 'Failed to join event room');
+      });
+  }, [event?.id, isConnected, hasJoinedRoom, joinEventRoom]);
 
   // Fetch polls and questions
   useEffect(() => {
@@ -105,10 +158,20 @@ export default function EventPage() {
   useEffect(() => {
     if (!event?.id) return;
 
-    const unsubVote = on('poll:vote_updated', (data: { pollId: string; results: any }) => {
-      setPolls((prev) =>
-        prev.map((p) => (p.id === data.pollId ? data.results : p))
-      );
+    const unsubVote = on('poll:vote_updated', (data: { pollId: string; results: Poll }) => {
+      setPolls((prev) => prev.map((p) => (p.id === data.pollId ? data.results : p)));
+    });
+
+    const unsubPollCreated = on('poll:created', (data: { poll: Poll }) => {
+      setPolls((prev) => [...prev, data.poll]);
+    });
+
+    const unsubPollStarted = on('poll:started', (data: { poll: Poll }) => {
+      setPolls((prev) => prev.map((p) => (p.id === data.poll.id ? data.poll : p)));
+    });
+
+    const unsubPollClosed = on('poll:closed', (data: { pollId: string; finalResults: Poll }) => {
+      setPolls((prev) => prev.map((p) => (p.id === data.pollId ? data.finalResults : p)));
     });
 
     const unsubQuestion = on('question:created', (q: Question) => {
@@ -117,14 +180,15 @@ export default function EventPage() {
 
     const unsubUpvote = on('question:upvoted', (data: { questionId: string; upvoteCount: number }) => {
       setQuestions((prev) =>
-        prev.map((q) =>
-          q.id === data.questionId ? { ...q, upvoteCount: data.upvoteCount } : q
-        )
+        prev.map((q) => (q.id === data.questionId ? { ...q, upvoteCount: data.upvoteCount } : q))
       );
     });
 
     return () => {
       unsubVote?.();
+      unsubPollCreated?.();
+      unsubPollStarted?.();
+      unsubPollClosed?.();
       unsubQuestion?.();
       unsubUpvote?.();
     };
@@ -134,11 +198,15 @@ export default function EventPage() {
     async (pollId: string) => {
       const options = selectedOptions[pollId];
       if (!options || options.length === 0) return;
+      setVotingPoll(pollId);
       try {
         await castVote(pollId, options);
         toast({ title: 'Vote recorded!', variant: 'success' });
+        setSelectedOptions((prev) => ({ ...prev, [pollId]: [] }));
       } catch (err: any) {
-        toast({ title: 'Vote failed', description: err.message, variant: 'destructive' });
+        toast({ title: 'Vote failed', description: err.message || 'Could not record vote', variant: 'destructive' });
+      } finally {
+        setVotingPoll(null);
       }
     },
     [selectedOptions, castVote]
@@ -163,7 +231,7 @@ export default function EventPage() {
       try {
         await upvoteQuestion(questionId);
       } catch (err: any) {
-        toast({ title: 'Failed to upvote', variant: 'destructive' });
+        toast({ title: 'Failed to upvote', description: err.message, variant: 'destructive' });
       }
     },
     [upvoteQuestion]
@@ -174,13 +242,33 @@ export default function EventPage() {
       const current = prev[pollId] || [];
       if (isMultiple) {
         const exists = current.includes(optionId);
-        return {
-          ...prev,
-          [pollId]: exists ? current.filter((id) => id !== optionId) : [...current, optionId],
-        };
+        return { ...prev, [pollId]: exists ? current.filter((id) => id !== optionId) : [...current, optionId] };
       }
       return { ...prev, [pollId]: [optionId] };
     });
+  };
+
+  const handleSendInvite = async () => {
+    if (!event?.id || !inviteEmail.trim()) return;
+    setSendingInvite(true);
+    try {
+      const res = await fetch(`${API_URL}/events/${event.id}/invite`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({ email: inviteEmail }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast({ title: `Invite sent to ${inviteEmail}`, variant: 'success' });
+        setInviteEmail('');
+      } else {
+        toast({ title: 'Failed to send invite', description: data.message, variant: 'destructive' });
+      }
+    } catch (err: any) {
+      toast({ title: 'Failed to send invite', description: err.message, variant: 'destructive' });
+    } finally {
+      setSendingInvite(false);
+    }
   };
 
   if (loading) {
@@ -197,7 +285,7 @@ export default function EventPage() {
     return (
       <div className="container mx-auto max-w-4xl p-6 text-center">
         <h1 className="text-2xl font-bold">Event not found</h1>
-        <p className="text-muted-foreground">Check your join code and try again.</p>
+        <p className="text-muted-foreground">{joinError || 'Check your join code and try again.'}</p>
       </div>
     );
   }
@@ -205,26 +293,24 @@ export default function EventPage() {
   const activePolls = polls.filter((p) => p.status === 'ACTIVE');
   const closedPolls = polls.filter((p) => p.status === 'CLOSED');
 
+  const eventUrl = typeof window !== 'undefined' ? `${window.location.origin}/event/${event.code}` : '';
+  const shareText = `Join me on PollCast for "${event.title}"! Use code: ${event.code}`;
+
   return (
-    <div className="min-h-screen bg-background">
-      <div className="border-b bg-card">
-        <div className="container mx-auto max-w-4xl px-6 py-8">
+    <div className="min-h-screen">
+      <div className="glass-strong sticky top-0 z-30 border-b border-white/10">
+        <div className="container mx-auto max-w-4xl px-6 py-6">
           <div className="flex items-start justify-between">
-            <div>
+            <div className="min-w-0 flex-1">
               <h1 className="text-3xl font-bold tracking-tight">{event.title}</h1>
-              {event.description && (
-                <p className="mt-2 text-muted-foreground">{event.description}</p>
-              )}
-              <div className="mt-3 flex items-center gap-3 text-sm text-muted-foreground">
+              {event.description && <p className="mt-2 text-muted-foreground">{event.description}</p>}
+              <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
                 <span>Hosted by {event.host.name}</span>
-                <Badge variant={event.status === 'ACTIVE' ? 'default' : 'secondary'}>
-                  {event.status}
+                <Badge variant={event.status === 'ACTIVE' ? 'default' : 'secondary'}>{event.status}</Badge>
+                <Badge variant="outline" className={isConnected ? 'text-green-600 border-green-500/30' : 'text-muted-foreground'}>
+                  {isConnected ? (hasJoinedRoom ? 'Connected' : 'Connecting...') : 'Disconnected'}
                 </Badge>
-                {isConnected && (
-                  <Badge variant="outline" className="text-green-600">
-                    Connected
-                  </Badge>
-                )}
+                <code className="rounded-lg bg-primary/10 px-2 py-0.5 font-mono text-xs text-primary">{event.code}</code>
               </div>
             </div>
           </div>
@@ -233,11 +319,10 @@ export default function EventPage() {
 
       <div className="container mx-auto max-w-4xl px-6 py-8">
         <Tabs defaultValue={activePolls.length > 0 ? 'polls' : 'qa'}>
-          <TabsList className="mb-6">
-            <TabsTrigger value="polls">
-              Polls {activePolls.length > 0 && `(${activePolls.length})`}
-            </TabsTrigger>
+          <TabsList className="glass rounded-xl border-0 p-1 mb-6">
+            <TabsTrigger value="polls">Polls {activePolls.length > 0 && `(${activePolls.length})`}</TabsTrigger>
             <TabsTrigger value="qa">Q&A ({questions.length})</TabsTrigger>
+            <TabsTrigger value="share">Share</TabsTrigger>
           </TabsList>
 
           <TabsContent value="polls" className="space-y-6">
@@ -251,69 +336,16 @@ export default function EventPage() {
 
             <AnimatePresence>
               {activePolls.map((poll) => (
-                <motion.div
+                <PollCard
                   key={poll.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                >
-                  <Card className="border-primary/20">
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        {poll.title}
-                        <Badge variant="default" className="animate-pulse">Live</Badge>
-                      </CardTitle>
-                      {poll.timerSeconds && (
-                        <p className="text-sm text-muted-foreground">
-                          Timer: {poll.timerSeconds}s
-                        </p>
-                      )}
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      {poll.options.map((option) => (
-                        <motion.button
-                          key={option.id}
-                          onClick={() => toggleOption(poll.id, option.id, poll.isMultipleChoice)}
-                          className={`w-full rounded-lg border p-4 text-left transition-all hover:border-primary/50 ${
-                            (selectedOptions[poll.id] || []).includes(option.id)
-                              ? 'border-primary bg-primary/5'
-                              : ''
-                          }`}
-                          whileTap={{ scale: 0.98 }}
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="font-medium">{option.text}</span>
-                            <span className="text-sm text-muted-foreground">
-                              {option.voteCount} votes
-                            </span>
-                          </div>
-                          {option.voteCount > 0 && (
-                            <div className="mt-2 h-2 w-full rounded-full bg-secondary">
-                              <motion.div
-                                className="h-full rounded-full bg-primary"
-                                initial={{ width: 0 }}
-                                animate={{
-                                  width: `${Math.min(
-                                    (option.voteCount / Math.max(...poll.options.map((o) => o.voteCount), 1)) * 100,
-                                    100
-                                  )}%`,
-                                }}
-                                transition={{ duration: 0.5 }}
-                              />
-                            </div>
-                          )}
-                        </motion.button>
-                      ))}
-                      <Button
-                        className="w-full mt-4"
-                        onClick={() => handleVote(poll.id)}
-                        disabled={!(selectedOptions[poll.id]?.length > 0)}
-                      >
-                        {poll.isMultipleChoice ? 'Cast Votes' : 'Cast Vote'}
-                      </Button>
-                    </CardContent>
-                  </Card>
-                </motion.div>
+                  poll={poll}
+                  selectedOptions={selectedOptions[poll.id] || []}
+                  votingPoll={votingPoll}
+                  onToggle={(optionId) => toggleOption(poll.id, optionId, poll.isMultipleChoice)}
+                  onVote={() => handleVote(poll.id)}
+                  isConnected={isConnected}
+                  hasJoinedRoom={hasJoinedRoom}
+                />
               ))}
             </AnimatePresence>
 
@@ -321,7 +353,7 @@ export default function EventPage() {
               <div>
                 <h3 className="mb-4 text-lg font-semibold text-muted-foreground">Past Polls</h3>
                 {closedPolls.map((poll) => (
-                  <Card key={poll.id} className="opacity-75">
+                  <Card key={poll.id} className="glass rounded-2xl border-0 shadow-lg shadow-black/5 opacity-75">
                     <CardHeader>
                       <CardTitle className="text-base">{poll.title}</CardTitle>
                       <Badge variant="secondary">Closed</Badge>
@@ -336,15 +368,10 @@ export default function EventPage() {
                             <div key={option.id} className="space-y-1">
                               <div className="flex justify-between text-sm">
                                 <span>{option.text}</span>
-                                <span className="text-muted-foreground">
-                                  {option.voteCount} ({pct.toFixed(0)}%)
-                                </span>
+                                <span className="text-muted-foreground">{option.voteCount} ({pct.toFixed(0)}%)</span>
                               </div>
                               <div className="h-2 w-full rounded-full bg-secondary">
-                                <div
-                                  className="h-full rounded-full bg-primary"
-                                  style={{ width: `${pct}%` }}
-                                />
+                                <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
                               </div>
                             </div>
                           );
@@ -357,7 +384,7 @@ export default function EventPage() {
           </TabsContent>
 
           <TabsContent value="qa" className="space-y-6">
-            <Card>
+            <Card className="glass rounded-2xl border-0 shadow-lg shadow-black/5">
               <CardContent className="pt-6">
                 <div className="space-y-4">
                   <div className="space-y-2">
@@ -381,10 +408,7 @@ export default function EventPage() {
                       />
                       Ask anonymously
                     </label>
-                    <Button
-                      onClick={handleAskQuestion}
-                      disabled={!questionText.trim() || submittingQuestion}
-                    >
+                    <Button onClick={handleAskQuestion} disabled={!questionText.trim() || submittingQuestion}>
                       {submittingQuestion ? 'Submitting...' : 'Submit Question'}
                     </Button>
                   </div>
@@ -409,11 +433,7 @@ export default function EventPage() {
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, x: -20 }}
                   >
-                    <Card
-                      className={`transition-all ${
-                        question.isPinned ? 'border-primary/40 bg-primary/5' : ''
-                      }`}
-                    >
+                    <Card className={question.isPinned ? 'border-primary/40 bg-primary/5' : ''}>
                       <CardContent className="flex items-start gap-4 py-4">
                         <Button
                           variant="ghost"
@@ -427,16 +447,10 @@ export default function EventPage() {
                         <div className="flex-1">
                           <div className="flex items-start justify-between">
                             <p className="font-medium">{question.content}</p>
-                            {question.isPinned && (
-                              <Badge variant="default" className="ml-2 shrink-0">
-                                Pinned
-                              </Badge>
-                            )}
+                            {question.isPinned && <Badge variant="default" className="ml-2 shrink-0">Pinned</Badge>}
                           </div>
                           <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-                            <span>
-                              {question.isAnonymous ? 'Anonymous' : question.author.name}
-                            </span>
+                            <span>{question.isAnonymous ? 'Anonymous' : question.author.name}</span>
                             <span>&middot;</span>
                             <span>{formatDate(question.createdAt)}</span>
                           </div>
@@ -448,8 +462,165 @@ export default function EventPage() {
               </AnimatePresence>
             </div>
           </TabsContent>
+
+          <TabsContent value="share" className="space-y-6">
+            <Card className="glass rounded-2xl border-0 shadow-lg shadow-black/5">
+              <CardHeader>
+                <CardTitle>Invite by Email</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <Input
+                    type="email"
+                    placeholder="friend@example.com"
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    className="rounded-xl sm:flex-1"
+                  />
+                  <Button className="rounded-full bg-gradient-to-r from-primary to-secondary shadow-lg shadow-primary/25 sm:w-auto w-full" onClick={handleSendInvite} disabled={!inviteEmail.trim() || sendingInvite}>
+                    {sendingInvite ? 'Sending...' : 'Send Invite'}
+                  </Button>
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  They will receive an email with a link to join this event. New users will be prompted to sign up.
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card className="glass rounded-2xl border-0 shadow-lg shadow-black/5">
+              <CardHeader>
+                <CardTitle>Share on Social Media</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-wrap gap-3">
+                  {SHARE_PLATFORMS.map((platform) => (
+                    <a
+                      key={platform.name}
+                      href={platform.share(eventUrl, shareText)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <Button className={`text-white rounded-full shadow-lg ${platform.color}`}>
+                        Share on {platform.name}
+                      </Button>
+                    </a>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="glass rounded-2xl border-0 shadow-lg shadow-black/5">
+              <CardHeader>
+                <CardTitle>Event Code</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground">Share this code with friends so they can join:</p>
+                <div className="mt-2 flex items-center gap-2">
+                  <code className="rounded-xl bg-primary/10 px-4 py-2 text-xl font-mono font-bold tracking-widest text-primary">
+                    {event.code}
+                  </code>
+                  <Button
+                    variant="outline"
+                    className="rounded-full border-white/10"
+                    onClick={() => {
+                      navigator.clipboard.writeText(event.code);
+                      toast({ title: 'Code copied!', variant: 'success' });
+                    }}
+                  >
+                    Copy
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
         </Tabs>
       </div>
     </div>
+  );
+}
+
+function PollCard({
+  poll,
+  selectedOptions,
+  votingPoll,
+  onToggle,
+  onVote,
+  isConnected,
+  hasJoinedRoom,
+}: {
+  poll: Poll;
+  selectedOptions: string[];
+  votingPoll: string | null;
+  onToggle: (optionId: string) => void;
+  onVote: () => void;
+  isConnected: boolean;
+  hasJoinedRoom: boolean;
+}) {
+  const remaining = useCountdown(poll.endsAt);
+  const isExpired = remaining <= 0 && poll.timerSeconds !== null;
+  const canVote = isConnected && hasJoinedRoom && votingPoll === null && selectedOptions.length > 0 && !isExpired;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+    >
+      <Card className="glass rounded-2xl border-0 shadow-lg shadow-black/5 ring-2 ring-primary/20">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            {poll.title}
+            <Badge variant="default" className="animate-pulse bg-gradient-to-r from-primary to-secondary">Live</Badge>
+            {poll.timerSeconds && (
+              <Badge variant={isExpired ? 'secondary' : 'outline'} className={isExpired ? '' : 'text-amber-600'}>
+                {isExpired ? 'Expired' : formatTimer(remaining)}
+              </Badge>
+            )}
+          </CardTitle>
+          {poll.timerSeconds && remaining > 0 && (
+            <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-secondary">
+              <motion.div
+                className="h-full rounded-full bg-gradient-to-r from-primary to-secondary"
+                initial={{ width: '100%' }}
+                animate={{ width: `${(remaining / poll.timerSeconds) * 100}%` }}
+                transition={{ duration: 1, ease: 'linear' }}
+              />
+            </div>
+          )}
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {poll.options.map((option) => {
+            const totalVotes = poll._count?.votes || poll.options.reduce((s, o) => s + o.voteCount, 0);
+            const pct = totalVotes > 0 ? (option.voteCount / totalVotes) * 100 : 0;
+            const isSelected = selectedOptions.includes(option.id);
+
+            return (
+              <motion.button
+                key={option.id}
+                onClick={() => !votingPoll && !isExpired && onToggle(option.id)}
+                disabled={!!votingPoll || isExpired}
+                className={`relative w-full rounded-lg border p-4 text-left transition-all overflow-hidden ${
+                  isSelected ? 'border-primary bg-primary/5' : 'hover:border-primary/50'
+                } ${votingPoll ? 'opacity-60 cursor-not-allowed' : ''} ${isExpired ? 'opacity-50 cursor-not-allowed' : ''}`}
+                whileTap={{ scale: 0.98 }}
+              >
+                <div className="absolute inset-0 bg-primary/5 transition-all" style={{ width: `${pct}%` }} />
+                <div className="relative flex items-center justify-between gap-2">
+                  <span className="font-medium truncate">{option.text}</span>
+                  <span className="text-sm text-muted-foreground shrink-0">{option.voteCount} votes</span>
+                </div>
+              </motion.button>
+            );
+          })}
+          <Button
+            className="w-full mt-4 rounded-full bg-gradient-to-r from-primary to-secondary hover:from-primary/90 hover:to-secondary/90 shadow-lg shadow-primary/25"
+            onClick={onVote}
+            disabled={!canVote}
+          >
+            {votingPoll === poll.id ? 'Submitting...' : isExpired ? 'Poll Ended' : poll.isMultipleChoice ? 'Cast Votes' : 'Cast Vote'}
+          </Button>
+        </CardContent>
+      </Card>
+    </motion.div>
   );
 }

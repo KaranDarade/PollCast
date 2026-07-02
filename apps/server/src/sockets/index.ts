@@ -144,4 +144,44 @@ export function configureSocket(io: Server) {
       console.log(`User disconnected: ${socket.userId}`);
     });
   });
+
+  // Periodically auto-close expired polls and notify rooms
+  const timerInterval = setInterval(async () => {
+    try {
+      const expired = await prisma.poll.findMany({
+        where: {
+          status: 'ACTIVE',
+          endsAt: { lte: new Date() },
+        },
+        include: {
+          options: { orderBy: { sortOrder: 'asc' } },
+          _count: { select: { votes: true } },
+        },
+      });
+
+      for (const poll of expired) {
+        await prisma.poll.update({
+          where: { id: poll.id },
+          data: { status: 'CLOSED' },
+        });
+
+        const event = await prisma.event.findUnique({
+          where: { id: poll.eventId },
+          select: { id: true },
+        });
+
+        if (event) {
+          io.to(`event:${event.id}`).emit('poll:closed', {
+            pollId: poll.id,
+            finalResults: { ...poll, status: 'CLOSED' },
+          });
+        }
+      }
+    } catch (err) {
+      // Silently handle periodic check errors
+    }
+  }, 5000);
+
+  // Store interval ref for cleanup
+  (io as any)._pollTimerInterval = timerInterval;
 }
