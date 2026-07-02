@@ -1,0 +1,216 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RoleName {
+  ADMIN
+  HOST
+  PARTICIPANT
+}
+
+enum EventStatus {
+  DRAFT
+  SCHEDULED
+  ACTIVE
+  ENDED
+}
+
+enum PollStatus {
+  DRAFT
+  ACTIVE
+  CLOSED
+}
+
+enum PollType {
+  POLL
+  QUIZ
+}
+
+model User {
+  id                String    @id @default(uuid()) @db.Uuid
+  email             String    @unique
+  passwordHash      String
+  name              String
+  avatar            String?
+  roleId            String    @db.Uuid
+  role              Role      @relation(fields: [roleId], references: [id])
+  emailVerified     DateTime?
+  verificationToken String?
+  resetToken        String?
+  resetTokenExpiry  DateTime?
+  refreshTokens     Json      @default("[]")
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  events        Event[]
+  eventAccesses EventAccess[]
+  votes         Vote[]
+  questions     Question[]
+  questionVotes QuestionVote[]
+  sessions      Session[]
+
+  @@index([email])
+  @@map("users")
+}
+
+model Role {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        RoleName @unique
+  permissions Json     @default("[]")
+  createdAt   DateTime @default(now())
+
+  users User[]
+
+  @@map("roles")
+}
+
+model Event {
+  id                String      @id @default(uuid()) @db.Uuid
+  title             String
+  description       String?
+  code              String      @unique
+  hostId            String      @db.Uuid
+  host              User        @relation(fields: [hostId], references: [id])
+  startDate         DateTime?
+  endDate           DateTime?
+  password          String?
+  status            EventStatus @default(DRAFT)
+  settings          Json        @default("{}")
+  maxParticipants   Int?
+  inviteCode        String?     @unique
+  inviteCodeExpiry  DateTime?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  polls       Poll[]
+  questions   Question[]
+  accessList  EventAccess[]
+
+  @@index([code])
+  @@index([hostId])
+  @@index([status])
+  @@map("events")
+}
+
+model EventAccess {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id])
+  eventId   String   @db.Uuid
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  role      String   @default("participant")
+  joinedAt  DateTime @default(now())
+
+  @@unique([userId, eventId])
+  @@index([eventId])
+  @@map("event_access")
+}
+
+model Poll {
+  id              String     @id @default(uuid()) @db.Uuid
+  eventId         String     @db.Uuid
+  event           Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  title           String
+  type            PollType   @default(POLL)
+  status          PollStatus @default(DRAFT)
+  timerSeconds    Int?
+  isMultipleChoice Boolean   @default(false)
+  endsAt          DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  options PollOption[]
+  votes   Vote[]
+
+  @@index([eventId])
+  @@index([status])
+  @@index([eventId, status])
+  @@map("polls")
+}
+
+model PollOption {
+  id        String   @id @default(uuid()) @db.Uuid
+  pollId    String   @db.Uuid
+  poll      Poll     @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  text      String
+  voteCount Int      @default(0)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  votes Vote[]
+
+  @@index([pollId])
+  @@map("poll_options")
+}
+
+model Vote {
+  id        String   @id @default(uuid()) @db.Uuid
+  pollId    String   @db.Uuid
+  poll      Poll     @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  optionId  String   @db.Uuid
+  option    PollOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  userId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@unique([pollId, userId])
+  @@index([pollId])
+  @@index([optionId])
+  @@map("votes")
+}
+
+model Question {
+  id          String   @id @default(uuid()) @db.Uuid
+  eventId     String   @db.Uuid
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  authorId    String   @db.Uuid
+  author      User     @relation(fields: [authorId], references: [id])
+  content     String
+  isAnonymous Boolean  @default(false)
+  isApproved  Boolean  @default(false)
+  isPinned    Boolean  @default(false)
+  upvoteCount Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  upvotes QuestionVote[]
+
+  @@index([eventId])
+  @@index([eventId, isApproved])
+  @@index([eventId, upvoteCount])
+  @@index([authorId])
+  @@map("questions")
+}
+
+model QuestionVote {
+  id         String   @id @default(uuid()) @db.Uuid
+  questionId String   @db.Uuid
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  userId     String   @db.Uuid
+  user       User     @relation(fields: [userId], references: [id])
+  createdAt  DateTime @default(now())
+
+  @@unique([questionId, userId])
+  @@index([questionId])
+  @@map("question_votes")
+}
+
+model Session {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @db.Uuid
+  user         User      @relation(fields: [userId], references: [id])
+  refreshToken String    @unique
+  userAgent    String?
+  ipAddress    String?   @db.VarChar(45)
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([userId])
+  @@map("sessions")
+}
