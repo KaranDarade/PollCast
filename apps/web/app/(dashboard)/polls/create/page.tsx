@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -28,17 +28,25 @@ type CreatePollForm = z.infer<typeof createPollSchema>;
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
 
 export default function CreatePollPage() {
+  return (
+    <Suspense fallback={<div className="mx-auto max-w-2xl pt-20 text-center text-muted-foreground">Loading...</div>}>
+      <CreatePollForm />
+    </Suspense>
+  );
+}
+
+function CreatePollForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const eventId = searchParams.get('eventId');
+  const eventIdParam = searchParams.get('eventId');
   const [loading, setLoading] = useState(false);
   const [events, setEvents] = useState<{ id: string; title: string }[]>([]);
 
-  const { register, control, handleSubmit, watch, setValue, formState: { errors } } = useForm<CreatePollForm>({
+  const { register, control, handleSubmit, setValue, formState: { errors } } = useForm<CreatePollForm>({
     resolver: zodResolver(createPollSchema),
     defaultValues: {
       title: '',
-      eventId: eventId || '',
+      eventId: eventIdParam || '',
       isMultipleChoice: false,
       timerSeconds: undefined,
       options: [{ value: '' }, { value: '' }],
@@ -48,7 +56,10 @@ export default function CreatePollPage() {
   const { fields, append, remove } = useFieldArray({ control, name: 'options' });
 
   useEffect(() => {
-    if (eventId) return;
+    if (eventIdParam) {
+      setValue('eventId', eventIdParam);
+      return;
+    }
     const token = localStorage.getItem('accessToken');
     fetch(`${API_URL}/events/my`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -58,7 +69,7 @@ export default function CreatePollPage() {
         if (data.success) setEvents(data.data || []);
       })
       .catch(console.error);
-  }, [eventId]);
+  }, [eventIdParam, setValue]);
 
   const onSubmit = async (data: CreatePollForm) => {
     setLoading(true);
@@ -80,7 +91,10 @@ export default function CreatePollPage() {
       });
 
       const json = await res.json();
-      if (!res.ok) throw new Error(json.message || 'Failed to create poll');
+      if (!res.ok) {
+        const details = json.error?.details?.map((d: any) => d.message).join('; ');
+        throw new Error(details || json.message || 'Failed to create poll');
+      }
 
       toast({ title: 'Poll created!', variant: 'success' });
       router.push(`/events/${data.eventId}`);
@@ -109,7 +123,7 @@ export default function CreatePollPage() {
         </CardHeader>
         <form onSubmit={handleSubmit(onSubmit)}>
           <CardContent className="space-y-6 pt-6">
-            {!eventId && events.length > 0 && (
+            {!eventIdParam && events.length > 0 && (
               <div className="space-y-2">
                 <Label>Event</Label>
                 <select

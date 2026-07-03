@@ -80,6 +80,8 @@ export class AuthService {
         email: user.email,
         name: user.name,
         role: user.role.name,
+        avatar: user.avatar,
+        phone: user.phone,
       },
       accessToken,
       refreshToken,
@@ -128,6 +130,8 @@ export class AuthService {
         email: user.email,
         name: user.name,
         role: user.role.name,
+        avatar: user.avatar,
+        phone: user.phone,
       },
     };
   }
@@ -157,7 +161,7 @@ export class AuthService {
       throw new UnauthorizedError('User not found');
     }
 
-    return user;
+    return { ...user, role: user.role.name };
   }
 
   async updateMe(userId: string, input: UpdateProfileInput) {
@@ -181,7 +185,7 @@ export class AuthService {
       },
     });
 
-    return user;
+    return { ...user, role: user.role.name };
   }
 }
 

@@ -9,9 +9,10 @@ import { useAuth } from '@/store/auth-context';
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: '📊' },
-  { href: '/events', label: 'Events', icon: '📋' },
+  { href: '/events', label: 'My Events', icon: '📋' },
   { href: '/events/create', label: 'Create Event', icon: '➕' },
   { href: '/events/join', label: 'Join Event', icon: '🔗' },
+  { href: '/events/history', label: 'History', icon: '📜' },
   { href: '/profile', label: 'Profile', icon: '👤' },
 ];
 

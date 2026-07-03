@@ -9,6 +9,7 @@ router.use(auth);
 
 router.post('/', asyncHandler(eventController.create.bind(eventController)));
 router.get('/my', asyncHandler(eventController.getMyEvents.bind(eventController)));
+router.get('/joined', asyncHandler(eventController.getJoinedEvents.bind(eventController)));
 router.get('/code/:code', asyncHandler(eventController.getByCode.bind(eventController)));
 router.get('/:id', asyncHandler(eventController.getById.bind(eventController)));
 router.patch('/:id', asyncHandler(eventController.update.bind(eventController)));

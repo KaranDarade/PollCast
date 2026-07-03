@@ -25,6 +25,11 @@ export class EventController {
     res.json({ success: true, data: events });
   }
 
+  async getJoinedEvents(req: Request, res: Response) {
+    const events = await eventService.getJoinedEvents(req.user!.userId);
+    res.json({ success: true, data: events });
+  }
+
   async update(req: Request, res: Response) {
     const input = updateEventSchema.parse(req.body);
     const event = await eventService.updateEvent(req.params.id!, req.user!.userId, input);

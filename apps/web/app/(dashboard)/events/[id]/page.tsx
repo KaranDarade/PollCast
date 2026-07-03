@@ -65,6 +65,7 @@ export default function EventDetailPage() {
   const [polls, setPolls] = useState<PollItem[]>([]);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [questions, setQuestions] = useState<QuestionItem[]>([]);
+  const [pendingQuestions, setPendingQuestions] = useState<QuestionItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
@@ -79,12 +80,14 @@ export default function EventDetailPage() {
       fetch(`${API_URL}/polls/event/${params.id}`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
       fetch(`${API_URL}/events/${params.id}/participants`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
       fetch(`${API_URL}/questions/event/${params.id}`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
+      fetch(`${API_URL}/questions/event/${params.id}/pending`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
     ])
-      .then(([e, p, pt, q]) => {
+      .then(([e, p, pt, q, pq]) => {
         if (e.success) setEvent(e.data);
         if (p.success) setPolls(p.data);
         if (pt.success) setParticipants(pt.data);
         if (q.success) setQuestions(q.data);
+        if (pq.success) setPendingQuestions(pq.data || []);
       })
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -119,13 +122,18 @@ export default function EventDetailPage() {
   };
 
   const moderateQuestion = async (questionId: string, action: string) => {
-    const res = await fetch(`${API_URL}/questions/moderate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ questionId, action }),
-    });
-    const data = await res.json();
-    if (data.success) { toast({ title: 'Question moderated', variant: 'success' }); fetchData(); }
+    try {
+      const res = await fetch(`${API_URL}/questions/moderate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ questionId, action }),
+      });
+      const data = await res.json();
+      if (data.success) { toast({ title: `Question ${action}ed`, variant: 'success' }); fetchData(); }
+      else { toast({ title: 'Failed', description: data.message, variant: 'destructive' }); }
+    } catch (err: any) {
+      toast({ title: 'Failed', description: err.message, variant: 'destructive' });
+    }
   };
 
   const handleSendInvite = async () => {
@@ -236,8 +244,9 @@ export default function EventDetailPage() {
       <Tabs defaultValue="polls">
         <TabsList className="glass rounded-xl border-0 p-1">
           <TabsTrigger value="polls">Polls ({polls.length})</TabsTrigger>
+          <TabsTrigger value="qa">Q&A ({questions.length})</TabsTrigger>
           <TabsTrigger value="participants">Participants ({participants.length})</TabsTrigger>
-          <TabsTrigger value="moderation">Moderation ({questions.filter(q => !q.isApproved).length})</TabsTrigger>
+          <TabsTrigger value="moderation">Pending ({pendingQuestions.length})</TabsTrigger>
           <TabsTrigger value="share">Share & Invite</TabsTrigger>
         </TabsList>
 
@@ -275,6 +284,45 @@ export default function EventDetailPage() {
           ))}
         </TabsContent>
 
+        <TabsContent value="qa" className="space-y-4 mt-6">
+          {questions.length === 0 ? (
+            <Card className="glass rounded-2xl border-0 shadow-lg shadow-black/5">
+              <CardContent className="py-12 text-center text-muted-foreground">No questions yet</CardContent>
+            </Card>
+          ) : (
+            questions.map((q, i) => (
+              <motion.div
+                key={q.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.03 }}
+              >
+                <Card className={`glass rounded-2xl border-0 shadow-lg shadow-black/5 ${q.isPinned ? 'ring-2 ring-primary/30' : ''}`}>
+                  <CardContent className="flex items-start justify-between py-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="font-medium">{q.content}</p>
+                        {q.isPinned && <Badge className="shrink-0">Pinned</Badge>}
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {q.isAnonymous ? 'Anonymous' : q.author.name} &middot; {q.upvoteCount} upvotes
+                      </p>
+                    </div>
+                    <div className="flex gap-2 ml-4 shrink-0">
+                      {q.isPinned ? (
+                        <Button size="sm" variant="outline" className="rounded-full border-white/10" onClick={() => moderateQuestion(q.id, 'unpin')}>Unpin</Button>
+                      ) : (
+                        <Button size="sm" variant="outline" className="rounded-full border-white/10" onClick={() => moderateQuestion(q.id, 'pin')}>Pin</Button>
+                      )}
+                      <Button size="sm" variant="destructive" className="rounded-full" onClick={() => moderateQuestion(q.id, 'reject')}>Delete</Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ))
+          )}
+        </TabsContent>
+
         <TabsContent value="participants" className="space-y-4 mt-6">
           {participants.length === 0 ? (
             <Card className="glass rounded-2xl border-0 shadow-lg shadow-black/5">
@@ -309,12 +357,12 @@ export default function EventDetailPage() {
         </TabsContent>
 
         <TabsContent value="moderation" className="space-y-4 mt-6">
-          {questions.filter(q => !q.isApproved).length === 0 ? (
+          {pendingQuestions.length === 0 ? (
             <Card className="glass rounded-2xl border-0 shadow-lg shadow-black/5">
               <CardContent className="py-12 text-center text-muted-foreground">No pending questions</CardContent>
             </Card>
           ) : (
-            questions.filter(q => !q.isApproved).map((q, i) => (
+            pendingQuestions.map((q, i) => (
               <motion.div
                 key={q.id}
                 initial={{ opacity: 0, y: 10 }}

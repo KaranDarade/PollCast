@@ -3,11 +3,21 @@ import { AppError } from '../utils/errors';
 import { ZodError } from 'zod';
 
 export function errorHandler(
-  err: Error,
+  err: any,
   _req: Request,
   res: Response,
   _next: NextFunction
 ): void {
+  // Handle body-parser errors (e.g. 413 Payload Too Large)
+  if (err.type === 'entity.too.large' || err.status === 413) {
+    res.status(413).json({
+      success: false,
+      message: 'Request body too large',
+      error: { code: 'PAYLOAD_TOO_LARGE' },
+    });
+    return;
+  }
+
   if (err instanceof AppError) {
     res.status(err.statusCode).json({
       success: false,

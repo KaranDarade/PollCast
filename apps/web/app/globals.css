@@ -4,48 +4,48 @@
 
 @layer base {
   :root {
-    --background: 220 25% 97%;
-    --foreground: 240 10% 15%;
+    --background: 30 20% 97%;
+    --foreground: 30 10% 15%;
     --card: 0 0% 100% / 0.75;
-    --card-foreground: 240 10% 15%;
-    --primary: 252 78% 60%;
+    --card-foreground: 30 10% 15%;
+    --primary: 12 75% 52%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 200 70% 55%;
+    --secondary: 38 85% 52%;
     --secondary-foreground: 0 0% 100%;
-    --muted: 240 5% 94%;
-    --muted-foreground: 240 4% 50%;
-    --accent: 340 70% 55%;
+    --muted: 30 10% 94%;
+    --muted-foreground: 30 8% 50%;
+    --accent: 175 60% 40%;
     --accent-foreground: 0 0% 100%;
     --destructive: 0 75% 55%;
     --destructive-foreground: 0 0% 100%;
     --success: 142 70% 45%;
     --success-foreground: 0 0% 100%;
-    --border: 240 6% 88%;
-    --input: 240 6% 88%;
-    --ring: 252 78% 60%;
+    --border: 30 10% 88%;
+    --input: 30 10% 88%;
+    --ring: 12 75% 52%;
     --radius: 0.75rem;
   }
 
   .dark {
-    --background: 240 15% 8%;
-    --foreground: 0 0% 95%;
-    --card: 240 12% 12% / 0.8;
-    --card-foreground: 0 0% 95%;
-    --primary: 252 70% 65%;
+    --background: 30 15% 8%;
+    --foreground: 30 10% 95%;
+    --card: 30 12% 12% / 0.8;
+    --card-foreground: 30 10% 95%;
+    --primary: 12 70% 58%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 200 65% 50%;
+    --secondary: 38 80% 55%;
     --secondary-foreground: 0 0% 100%;
-    --muted: 240 8% 18%;
-    --muted-foreground: 240 5% 60%;
-    --accent: 340 65% 50%;
+    --muted: 30 8% 18%;
+    --muted-foreground: 30 5% 60%;
+    --accent: 175 55% 48%;
     --accent-foreground: 0 0% 100%;
     --destructive: 0 65% 45%;
     --destructive-foreground: 0 0% 100%;
     --success: 142 60% 40%;
     --success-foreground: 0 0% 100%;
-    --border: 240 8% 22%;
-    --input: 240 8% 22%;
-    --ring: 252 70% 65%;
+    --border: 30 8% 22%;
+    --input: 30 8% 22%;
+    --ring: 12 70% 58%;
   }
 }
 
@@ -126,21 +126,21 @@
 
 .orb-1 {
   width: 400px; height: 400px;
-  background: radial-gradient(circle, hsl(252 78% 60% / 0.15), transparent 70%);
+  background: radial-gradient(circle, hsl(12 75% 52% / 0.15), transparent 70%);
   animation: float-1 20s ease-in-out infinite;
   top: -100px; left: -100px;
 }
 
 .orb-2 {
   width: 350px; height: 350px;
-  background: radial-gradient(circle, hsl(200 70% 55% / 0.12), transparent 70%);
+  background: radial-gradient(circle, hsl(38 85% 52% / 0.12), transparent 70%);
   animation: float-2 25s ease-in-out infinite;
   bottom: -80px; right: -80px;
 }
 
 .orb-3 {
   width: 300px; height: 300px;
-  background: radial-gradient(circle, hsl(340 70% 55% / 0.1), transparent 70%);
+  background: radial-gradient(circle, hsl(175 60% 40% / 0.1), transparent 70%);
   animation: float-3 18s ease-in-out infinite;
   top: 50%; left: 50%;
   transform: translate(-50%, -50%);
@@ -153,11 +153,11 @@
 }
 
 .dark .orb-1 {
-  background: radial-gradient(circle, hsl(252 70% 65% / 0.2), transparent 70%);
+  background: radial-gradient(circle, hsl(12 70% 58% / 0.2), transparent 70%);
 }
 .dark .orb-2 {
-  background: radial-gradient(circle, hsl(200 65% 50% / 0.15), transparent 70%);
+  background: radial-gradient(circle, hsl(38 80% 55% / 0.15), transparent 70%);
 }
 .dark .orb-3 {
-  background: radial-gradient(circle, hsl(340 65% 50% / 0.12), transparent 70%);
+  background: radial-gradient(circle, hsl(175 55% 48% / 0.12), transparent 70%);
 }

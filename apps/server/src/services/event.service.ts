@@ -126,6 +126,26 @@ export class EventService {
     });
   }
 
+  async getJoinedEvents(userId: string) {
+    const accessRecords = await prisma.eventAccess.findMany({
+      where: { userId, role: 'participant' },
+      include: {
+        event: {
+          include: {
+            host: { select: { id: true, name: true, email: true } },
+            _count: { select: { polls: true, questions: true, accessList: true } },
+          },
+        },
+      },
+      orderBy: { joinedAt: 'desc' },
+    });
+
+    return accessRecords.map((record) => ({
+      ...record.event,
+      joinedAt: record.joinedAt,
+    }));
+  }
+
   async updateEvent(eventId: string, userId: string, input: UpdateEventInput) {
     const event = await prisma.event.findUnique({ where: { id: eventId } });
     if (!event) throw new NotFoundError('Event');
