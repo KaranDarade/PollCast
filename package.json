@@ -4,6 +4,7 @@
   "private": true,
   "description": "Real-Time Live Polling & Q&A Platform",
   "scripts": {
+    "postinstall": "npx prisma generate",
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:web\"",
     "dev:web": "npm run dev --workspace=apps/web",
     "dev:server": "npm run dev --workspace=apps/server",
