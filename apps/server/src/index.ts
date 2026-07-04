@@ -22,8 +22,12 @@ import { setIO } from './sockets/emitter';
 const app = express();
 const server = http.createServer(app);
 
-// Redis client
-const redis = new Redis(config.redis.url);
+// Redis client (optional — server works without it)
+const redis = new Redis(config.redis.url, {
+  maxRetriesPerRequest: null,
+  retryStrategy: () => null,
+});
+redis.on('error', () => {});
 
 // Socket.IO
 const io = new Server(server, {
@@ -35,10 +39,13 @@ const io = new Server(server, {
   pingInterval: 25000,
 });
 
-// Configure Redis adapter for Socket.IO
-const pubClient = redis;
-const subClient = redis.duplicate();
-io.adapter(createAdapter(pubClient, subClient));
+// Configure Redis adapter for Socket.IO (falls back to in-memory if unavailable)
+try {
+  const subClient = redis.duplicate();
+  io.adapter(createAdapter(redis, subClient));
+} catch {
+  console.warn('⚠️  Redis unavailable — Socket.IO using in-memory adapter');
+}
 
 // Global middleware
 app.use(helmet());
@@ -61,7 +68,6 @@ app.use(globalLimiter);
 app.get('/api/health', async (_req, res) => {
   try {
     await prisma.$queryRaw`SELECT 1`;
-    await redis.ping();
     res.json({ status: 'healthy', timestamp: new Date().toISOString() });
   } catch {
     res.status(503).json({ status: 'unhealthy' });

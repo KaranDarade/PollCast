@@ -1,9 +1,37 @@
 import { Request, Response, NextFunction } from 'express';
-import { Redis } from 'ioredis';
 import { config } from '../config';
 import { RateLimitError } from '../utils/errors';
 
-const redis = new Redis(config.redis.url);
+// In-memory fallback store
+const memoryStore = new Map<string, { timestamps: number[] }>();
+
+function memoryRateLimiter(key: string, windowMs: number, maxRequests: number): boolean {
+  const now = Date.now();
+  const windowStart = now - windowMs;
+  let entry = memoryStore.get(key);
+  if (!entry) {
+    entry = { timestamps: [] };
+    memoryStore.set(key, entry);
+  }
+  entry.timestamps = entry.timestamps.filter((t) => t > windowStart);
+  if (entry.timestamps.length >= maxRequests) return false;
+  entry.timestamps.push(now);
+  return true;
+}
+
+// Attempt Redis connection (non-blocking)
+let redis: import('ioredis').Redis | null = null;
+try {
+  const Redis = require('ioredis').default;
+  redis = new Redis(config.redis.url, {
+    maxRetriesPerRequest: null,
+    retryStrategy: () => null,
+    enableOfflineQueue: false,
+  });
+  redis.on('error', () => { redis = null; });
+} catch {
+  redis = null;
+}
 
 interface RateLimitConfig {
   windowMs: number;
@@ -23,6 +51,15 @@ export function createRateLimiter(overrides: Partial<RateLimitConfig> = {}) {
     const key = `ratelimit:${req.ip}:${req.path}`;
     const now = Date.now();
     const windowStart = now - windowMs;
+
+    // Use in-memory store if Redis unavailable
+    if (!redis) {
+      if (!memoryRateLimiter(key, windowMs, maxRequests)) {
+        throw new RateLimitError();
+      }
+      next();
+      return;
+    }
 
     try {
       const multi = redis.multi();
