@@ -30,6 +30,6 @@ COPY --from=builder /app/prisma ./prisma
 
 USER express
 
-EXPOSE 4000
+EXPOSE 8080
 
 CMD ["node", "dist/index.js"]
