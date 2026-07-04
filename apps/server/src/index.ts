@@ -69,15 +69,17 @@ if (config.env === 'development') {
 const globalLimiter = createRateLimiter({ windowMs: 60 * 1000, maxRequests: 100 });
 app.use(globalLimiter);
 
-// Health check
-app.get('/api/health', async (_req, res) => {
+// Health check (both paths so Next.js rewrite works)
+async function healthCheck(_req: express.Request, res: express.Response) {
   try {
     await prisma.$queryRaw`SELECT 1`;
     res.json({ status: 'healthy', timestamp: new Date().toISOString() });
   } catch {
     res.status(503).json({ status: 'unhealthy' });
   }
-});
+}
+app.get('/api/health', healthCheck);
+app.get('/api/v1/health', healthCheck);
 
 // API routes
 app.use('/api/v1/auth', authRoutes);
