@@ -23,13 +23,14 @@ function memoryRateLimiter(key: string, windowMs: number, maxRequests: number): 
 let redis: import('ioredis').Redis | null = null;
 try {
   const Redis = require('ioredis');
-  redis = new Redis(config.redis.url, {
+  const client = new Redis(config.redis.url, {
     maxRetriesPerRequest: null,
     retryStrategy: () => null,
     enableOfflineQueue: false,
     connectTimeout: 5000,
   });
-  redis.on('error', () => { redis = null; });
+  client.on('error', () => { redis = null; });
+  redis = client;
 } catch {
   redis = null;
 }
