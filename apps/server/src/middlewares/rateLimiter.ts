@@ -22,11 +22,12 @@ function memoryRateLimiter(key: string, windowMs: number, maxRequests: number): 
 // Attempt Redis connection (non-blocking)
 let redis: import('ioredis').Redis | null = null;
 try {
-  const Redis = require('ioredis').default;
+  const Redis = require('ioredis');
   redis = new Redis(config.redis.url, {
     maxRetriesPerRequest: null,
     retryStrategy: () => null,
     enableOfflineQueue: false,
+    connectTimeout: 5000,
   });
   redis.on('error', () => { redis = null; });
 } catch {
@@ -55,10 +56,9 @@ export function createRateLimiter(overrides: Partial<RateLimitConfig> = {}) {
     // Use in-memory store if Redis unavailable
     if (!redis) {
       if (!memoryRateLimiter(key, windowMs, maxRequests)) {
-        throw new RateLimitError();
+        return next(new RateLimitError());
       }
-      next();
-      return;
+      return next();
     }
 
     try {
@@ -71,20 +71,19 @@ export function createRateLimiter(overrides: Partial<RateLimitConfig> = {}) {
       const results = await multi.exec();
 
       if (!results) {
-        next();
-        return;
+        return next();
       }
 
       const count = results[2]?.[1] as number;
 
       if (count > maxRequests) {
-        throw new RateLimitError();
+        return next(new RateLimitError());
       }
 
       next();
     } catch (err) {
       if (err instanceof RateLimitError) {
-        throw err;
+        return next(err);
       }
       next();
     }

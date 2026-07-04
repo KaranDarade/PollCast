@@ -22,11 +22,16 @@ import { setIO } from './sockets/emitter';
 const app = express();
 const server = http.createServer(app);
 
+app.set('trust proxy', 1);
+
 // Redis client (optional — server works without it)
 const redis = new Redis(config.redis.url, {
   maxRetriesPerRequest: null,
   retryStrategy: () => null,
+  connectTimeout: 5000,
+  lazyConnect: true,
 });
+redis.connect().catch(() => {});
 redis.on('error', () => {});
 
 // Socket.IO
