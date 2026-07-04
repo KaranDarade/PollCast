@@ -5,10 +5,12 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY apps/server/package.json ./apps/server/
 COPY packages/ ./packages/
-RUN npm ci --ignore-scripts
+COPY prisma ./prisma
+RUN npm ci
 
 COPY tsconfig.json ./
 COPY apps/server/ ./apps/server/
+RUN npx prisma generate
 RUN npm run build --workspace=apps/server
 
 FROM node:20-alpine AS runner
@@ -24,7 +26,7 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/apps/server/dist ./dist
 COPY --from=builder /app/apps/server/package.json .
 COPY --from=builder /app/packages ./packages
-COPY prisma ./prisma
+COPY --from=builder /app/prisma ./prisma
 
 USER express
 
